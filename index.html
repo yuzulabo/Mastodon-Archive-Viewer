@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset=utf-8>
+    <title>Mastodon Archive Viewer</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/0.100.2/css/materialize.min.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <style>
+        html, body {
+            height: 100%;
+            width: 100%;
+            background-color: #282c37;
+        }
+        .invisible {
+            display: none;
+        }
+
+        .toot:first-child {
+            margin-top: .5rem;
+            border-radius: 2px 2px 0 0;
+        }
+        .toot {
+            padding: 14px;
+            margin: 0;
+            border-radius: 0;
+        }
+        .toot:last-child {
+            margin-bottom: 1rem;
+            border-radius: 0 0 2px 2px;
+        }
+
+        .right {
+            text-align: right;
+        }
+    </style>
+</head>
+<body>
+<div class="row container" id="error-box" style="display: none;">
+    <div class="card-panel red darken-1">
+        <button class="waves-effect waves-teal btn-flat white-text" onclick='document.getElementById("error-box").style.display = "none"'>閉じる</button>
+        <span class="white-text">Error: <span id="error-text"></span></span>
+    </div>
+</div>
+<div id="load">
+    <div class="center">
+        <div class="row container">
+            <div class="card-panel">
+                <h4>Mastodon Archive Viewer</h4>
+                <p>
+                    <b>actor.json:</b>
+                    <input type="file" id="actor-json">
+                </p>
+                <p>
+                    <b>outbox.json:</b>
+                    <input type="file" id="outbox-json">
+                </p>
+                <p>
+                    <button class="waves-effect waves-light btn light-blue darken-3" onclick="loadfile()">Load</button>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+<div id="main" class="invisible">
+    <div class="center">
+        <div class="row container">
+            <div class="col m2"></div>
+            <div class="col m8 s12">
+                <div class="card-panel">
+                    <h4 class="header grey-text text-darken-4" id="display_name"></h4>
+                    <p class="blue-text text-darken-3">@<span id="username"></span></p>
+                    <hr>
+                    <p id="note"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="card-panel">
+            総数: <b id="totalitems"></b>トゥート
+        </div>
+        <div id="tootlist">
+            <div class="card-panel center">
+                <button class="waves-effect waves-light btn-large pink darken-2" onclick="loadAllToot()">全てのトゥートを見る</button><br>
+                * かなり重いです
+            </div>
+        </div>
+    </div>
+</div>
+<div class="container">
+    <div class="card-panel">
+        全てJavaScriptで処理されているため、サーバーにデータは保存されません。<br>
+        <a href="https://github.com/yuzulabo/Mastodon-Archive-Viewer" target="_blank">ソースコード</a> · <a href="https://knzk.me/@y" target="_blank">開発者: @y@knzk.me</a>
+    </div>
+</div>
+<script type="text/javascript" src="https://code.jquery.com/jquery-3.2.1.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/0.100.2/js/materialize.min.js"></script>
+<script>
+    var actor_json, outbox_json;
+
+    function loadPage() {
+        if (!actor_json["name"]) actor_json["name"] = actor_json["preferredUsername"];
+        elemid("display_name").innerText = actor_json["name"];
+        elemid("username").innerText = actor_json["preferredUsername"];
+        elemid("note").innerHTML = actor_json["summary"];
+        elemid("totalitems").innerText = outbox_json['totalItems'];
+
+        elemid("load").className = "invisible";
+        elemid("main").className = "";
+    }
+
+    function loadAllToot() {
+        var i = 0, toothtml = "";
+        outbox_json["orderedItems"] = outbox_json["orderedItems"].reverse();
+        while (outbox_json["orderedItems"][i]) {
+            toothtml += toot(outbox_json["orderedItems"][i]);
+            i++;
+        }
+        elemid("tootlist").innerHTML = toothtml;
+    }
+
+    function loadfile() {
+        actor_json = null;
+        outbox_json = null;
+        var actor_json_file = elemid("actor-json").files[0];
+        var outbox_json_file = elemid("outbox-json").files[0];
+        if (actor_json_file && outbox_json_file) {
+            try {
+                var file_reader = new FileReader();
+                file_reader.onload = function (event) {
+                    var json = JSON.parse(event.target.result);
+                    if (json["type"] === "Person") {
+                        actor_json = json;
+                        file_reader.readAsText(outbox_json_file);
+                    } else if (json["type"] === "OrderedCollection") {
+                        outbox_json = json;
+                        if (!actor_json) {
+                            error("ファイルを逆に選択しているようです。やり直してください。");
+                        }
+                    } else {
+                        error("これはMastodonのエクスポートファイルではないようです。");
+                    }
+                    if (actor_json && outbox_json) {
+                        loadPage();
+                    }
+                };
+                file_reader.readAsText(actor_json_file);
+            } catch (e) {
+                error("ファイルの読み込み中にエラーが発生しました。"+e);
+            }
+        } else {
+            error("ファイルが選択されていません。");
+        }
+    }
+    
+    function toot(toot) {
+        var html, content, url;
+
+        if (toot["type"] === "Announce") { //BT
+            url = toot['object'];
+            content = "<span class='blue-text'>[ブーストした投稿]</span> <small>日時をクリックするとブーストしたトゥートを見ることができます</small>";
+        } else if (toot["type"] === "Create") {
+            url = toot['object']['url'];
+            content = toot['object']['content'];
+        }
+
+        html = "<div class='card-panel toot'>" +
+            "<b>"+actor_json["name"]+"</b> <span class='blue-grey-text'>@"+actor_json["preferredUsername"]+"</span>" +
+            "<div class='right'><a href='"+url+"' target='_blank' class='blue-grey-text'>"+toot['published']+"</a></div>" +
+            "<p>"+content+"</p>\n" +
+            "</div>";
+        
+        return html;
+    }
+
+    function error(text) {
+        elemid("error-text").innerText = text;
+        elemid("error-box").style.display = "block";
+    }
+
+    function elemid(id) {
+        return document.getElementById(id);
+    }
+</script>
+</body>
+</html>
